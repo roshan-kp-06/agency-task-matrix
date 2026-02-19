@@ -40,7 +40,12 @@ export async function POST() {
       }))
     ).select()
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) {
+      if (error.message?.includes('schema cache') || error.message?.includes('does not exist') || error.code === '42P01') {
+        return NextResponse.json({ error: 'Database not set up yet. Run the SQL schema in your Supabase SQL Editor first.' }, { status: 503 })
+      }
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
 
     return NextResponse.json({
       imported: data?.length || 0,

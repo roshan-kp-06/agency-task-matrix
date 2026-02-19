@@ -18,7 +18,18 @@ export async function GET(request: NextRequest) {
 
   const { data, error } = await query
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) {
+    // Fall back to localStorage mode if Supabase isn't configured or table doesn't exist yet
+    if (
+      error.message?.includes('Supabase env vars not configured') ||
+      error.message?.includes('relation') ||
+      error.message?.includes('does not exist') ||
+      error.code === '42P01'
+    ) {
+      return NextResponse.json({ supabaseNotConfigured: true, tasks: [] })
+    }
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
   return NextResponse.json(data)
 }
 

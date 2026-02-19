@@ -2,7 +2,7 @@
 
 Prioritize tasks by **Leverage** (ROI) vs **Effort** — a visual 2×2 matrix that tells you exactly what to work on next.
 
-Live at: _(add Vercel URL after deployment)_
+Live at: **https://agency-task-matrix.vercel.app**
 
 ## Quadrants
 

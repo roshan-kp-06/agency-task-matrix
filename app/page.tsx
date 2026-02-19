@@ -5,16 +5,41 @@ import { TaskMatrix } from '@/components/TaskMatrix'
 import { TaskList } from '@/components/TaskList'
 import { AddTaskPanel } from '@/components/AddTaskPanel'
 import { Task } from '@/lib/supabase'
-import { LayoutGrid, List, Plus, RefreshCw, Download, Check, X, Zap } from 'lucide-react'
+import { LayoutGrid, List, Plus, RefreshCw, Download, Check, X, Zap, Database } from 'lucide-react'
 
 type View = 'matrix' | 'list'
+type StorageMode = 'supabase' | 'local' | 'detecting'
 type ImportStatus = { loading: boolean; message: string; type: 'idle' | 'success' | 'error' }
+
+const LOCAL_STORAGE_KEY = 'task-matrix-tasks'
+
+function localLoad(): Task[] {
+  try {
+    const raw = localStorage.getItem(LOCAL_STORAGE_KEY)
+    return raw ? JSON.parse(raw) : []
+  } catch {
+    return []
+  }
+}
+
+function localSave(tasks: Task[]) {
+  try {
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(tasks))
+  } catch {
+    console.error('Failed to save tasks to localStorage')
+  }
+}
+
+function generateId(): string {
+  return crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2)
+}
 
 export default function Home() {
   const [tasks, setTasks] = useState<Task[]>([])
   const [view, setView] = useState<View>('matrix')
   const [showAddPanel, setShowAddPanel] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [storageMode, setStorageMode] = useState<StorageMode>('detecting')
   const [slackStatus, setSlackStatus] = useState<ImportStatus>({ loading: false, message: '', type: 'idle' })
   const [airtableStatus, setAirtableStatus] = useState<ImportStatus>({ loading: false, message: '', type: 'idle' })
 
@@ -23,9 +48,18 @@ export default function Home() {
     try {
       const res = await fetch('/api/tasks?status=active')
       const data = await res.json()
-      setTasks(Array.isArray(data) ? data : [])
+      if (data.supabaseNotConfigured) {
+        // Fall back to localStorage
+        setStorageMode('local')
+        setTasks(localLoad().filter(t => t.status === 'active'))
+      } else {
+        setStorageMode('supabase')
+        setTasks(Array.isArray(data) ? data : [])
+      }
     } catch {
-      console.error('Failed to fetch tasks')
+      // Network error — also fall back to localStorage
+      setStorageMode('local')
+      setTasks(localLoad().filter(t => t.status === 'active'))
     } finally {
       setLoading(false)
     }
@@ -34,30 +68,76 @@ export default function Home() {
   useEffect(() => { fetchTasks() }, [fetchTasks])
 
   const updateTask = async (id: string, updates: Partial<Task>) => {
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t))
-    await fetch(`/api/tasks/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updates),
-    })
+    const updated = tasks.map(t => t.id === id ? { ...t, ...updates } : t)
+    setTasks(updated)
+
+    if (storageMode === 'local') {
+      const allTasks = localLoad()
+      localSave(allTasks.map(t => t.id === id ? { ...t, ...updates } : t))
+    } else {
+      await fetch(`/api/tasks/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      })
+    }
   }
 
-  const markDone = async (id: string) => {
+  const removeFromView = async (id: string, status: 'completed' | 'killed') => {
     setTasks(prev => prev.filter(t => t.id !== id))
-    await fetch(`/api/tasks/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: 'completed' }),
-    })
+
+    if (storageMode === 'local') {
+      const allTasks = localLoad()
+      localSave(allTasks.map(t => t.id === id ? { ...t, status } : t))
+    } else {
+      await fetch(`/api/tasks/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      })
+    }
   }
 
-  const killTask = async (id: string) => {
-    setTasks(prev => prev.filter(t => t.id !== id))
-    await fetch(`/api/tasks/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: 'killed' }),
-    })
+  const markDone = (id: string) => removeFromView(id, 'completed')
+  const killTask = (id: string) => removeFromView(id, 'killed')
+
+  const addTask = async (taskInput: {
+    title: string
+    description: string
+    source: 'manual'
+    leverage: number
+    effort: number
+  }) => {
+    if (storageMode === 'local') {
+      const newTask: Task = {
+        id: generateId(),
+        title: taskInput.title,
+        description: taskInput.description || null,
+        source: taskInput.source,
+        source_id: null,
+        leverage: taskInput.leverage,
+        effort: taskInput.effort,
+        status: 'active',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        completed_at: null,
+        context_url: null,
+        tags: [],
+      }
+      const allTasks = localLoad()
+      localSave([newTask, ...allTasks])
+      setTasks(prev => [newTask, ...prev])
+      setShowAddPanel(false)
+    } else {
+      const res = await fetch('/api/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(taskInput),
+      })
+      const newTask = await res.json()
+      setTasks(prev => [newTask, ...prev])
+      setShowAddPanel(false)
+    }
   }
 
   const handleImport = async (source: 'slack' | 'airtable') => {
@@ -91,6 +171,20 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100 flex flex-col">
+      {/* Local mode banner */}
+      {storageMode === 'local' && (
+        <div className="bg-amber-900/40 border-b border-amber-800/50 px-6 py-2 text-center">
+          <p className="text-xs text-amber-300 flex items-center justify-center gap-1.5">
+            <Database size={12} />
+            <span>
+              <strong>Local mode</strong> — tasks saved in this browser only. To sync across devices,{' '}
+              add <code className="bg-amber-900/60 px-1 rounded text-amber-200">NEXT_PUBLIC_SUPABASE_URL</code> and{' '}
+              <code className="bg-amber-900/60 px-1 rounded text-amber-200">NEXT_PUBLIC_SUPABASE_ANON_KEY</code> in Vercel env vars.
+            </span>
+          </p>
+        </div>
+      )}
+
       {/* Header */}
       <header className="border-b border-gray-800 px-6 py-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-4 flex-wrap">
@@ -222,16 +316,7 @@ export default function Home() {
       {showAddPanel && (
         <AddTaskPanel
           onClose={() => setShowAddPanel(false)}
-          onAdd={async (task) => {
-            const res = await fetch('/api/tasks', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(task),
-            })
-            const newTask = await res.json()
-            setTasks(prev => [newTask, ...prev])
-            setShowAddPanel(false)
-          }}
+          onAdd={addTask}
         />
       )}
     </div>

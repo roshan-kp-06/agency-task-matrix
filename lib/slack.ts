@@ -6,8 +6,8 @@ export type SlackTask = {
 }
 
 export async function fetchSlackTasks(): Promise<SlackTask[]> {
-  const token = process.env.SLACK_BOT_TOKEN
-  if (!token) throw new Error('SLACK_BOT_TOKEN not set')
+  const token = process.env.SLACK_BOT_TOKEN || process.env.SLACK_USER_TOKEN
+  if (!token) throw new Error('SLACK_BOT_TOKEN or SLACK_USER_TOKEN not set')
 
   // Fetch channels the bot is in
   const channelsRes = await fetch(

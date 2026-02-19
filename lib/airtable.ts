@@ -7,14 +7,17 @@ export type AirtableTask = {
 
 export async function fetchAirtableTasks(): Promise<AirtableTask[]> {
   const apiKey = process.env.AIRTABLE_API_KEY
-  const baseId = process.env.AIRTABLE_BASE_ID
-  const tableName = process.env.AIRTABLE_TABLE_NAME || 'Tasks'
-  const assigneeField = process.env.AIRTABLE_ASSIGNEE_FIELD || 'Assignee'
-  const assigneeValue = process.env.AIRTABLE_ASSIGNEE_VALUE || 'Roshan'
+  const baseId = process.env.AIRTABLE_BASE_ID || 'appyNh9YMfuKcudXq'
+  const tableName = process.env.AIRTABLE_TABLE_NAME || 'Task Hub'
 
-  if (!apiKey || !baseId) throw new Error('AIRTABLE_API_KEY or AIRTABLE_BASE_ID not set')
+  if (!apiKey) throw new Error('AIRTABLE_API_KEY not set')
 
-  const filterFormula = encodeURIComponent(`SEARCH("${assigneeValue}", {${assigneeField}}) > 0`)
+  // Filter: incomplete tasks where Deliverable Title contains "Roshan"
+  // (Roshan Prakash is the assignee — Task Hub uses "Owner Name" in the title)
+  const filterFormula = encodeURIComponent(
+    `AND({Complete?} = FALSE(), SEARCH("Roshan", {Deliverable Title}) > 0)`
+  )
+
   const url = `https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}?filterByFormula=${filterFormula}&maxRecords=100`
 
   const res = await fetch(url, {
@@ -23,7 +26,7 @@ export async function fetchAirtableTasks(): Promise<AirtableTask[]> {
 
   if (!res.ok) {
     const err = await res.text()
-    throw new Error(`Airtable fetch failed: ${err}`)
+    throw new Error(`Airtable fetch failed (${res.status}): ${err}`)
   }
 
   const data = await res.json()
@@ -31,27 +34,27 @@ export async function fetchAirtableTasks(): Promise<AirtableTask[]> {
 
   for (const record of data.records || []) {
     const fields = record.fields
-    // Try common task title field names
-    const title =
-      fields['Name'] ||
-      fields['Task'] ||
-      fields['Title'] ||
-      fields['Task Name'] ||
-      fields['Summary'] ||
-      Object.values(fields)[0] ||
-      'Untitled task'
 
-    // Skip if no meaningful title
-    if (!title || typeof title !== 'string') continue
+    // Use the specific Task field, fall back to Deliverable Title
+    const taskText = fields['Task'] || fields['Deliverable Title'] || 'Untitled task'
+    const title = String(taskText).slice(0, 200)
 
-    const description =
-      fields['Description'] || fields['Notes'] || fields['Details'] || ''
+    // Parse client name from Deliverable Title: "Client | Task | Owner"
+    const deliverableTitle = String(fields['Deliverable Title'] || '')
+    const parts = deliverableTitle.split(' | ')
+    const clientName = parts.length >= 2 ? parts[0].trim() : ''
+
+    const notes = fields['Notes'] || ''
+    const dueDate = fields['Due Date'] ? `Due: ${fields['Due Date']}` : ''
+    const description = [clientName && `Client: ${clientName}`, dueDate, notes]
+      .filter(Boolean)
+      .join(' · ')
 
     tasks.push({
-      title: String(title).slice(0, 200),
-      description: String(description).slice(0, 500),
+      title,
+      description: description.slice(0, 500),
       source_id: `airtable_${record.id}`,
-      context_url: `https://airtable.com/${baseId}`,
+      context_url: `https://airtable.com/${baseId}/${tableName.replace(/ /g, '%20')}/${record.id}`,
     })
   }
 

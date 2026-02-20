@@ -45,18 +45,23 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const body = await request.json()
 
-  const baseRow = {
+  // Core columns that always exist
+  const coreRow = {
     title: body.title,
     description: body.description || null,
     source: body.source || 'manual',
     source_id: body.source_id || null,
     leverage: body.leverage ?? 5,
     effort: body.effort ?? 5,
-    urgency: body.urgency || 'whenever',
-    category: body.category || null,
     status: 'active',
     context_url: body.context_url || null,
     tags: body.tags || [],
+  }
+
+  const baseRow = {
+    ...coreRow,
+    urgency: body.urgency || 'whenever',
+    category: body.category || null,
   }
 
   let { data, error } = await supabase
@@ -66,10 +71,15 @@ export async function POST(request: NextRequest) {
     .single()
 
   // If metadata column doesn't exist yet, retry without it
-  if (error && (error.message?.includes('metadata') || error.message?.includes('column'))) {
-    const fallback = await supabase.from('tasks').insert(baseRow).select().single()
-    data = fallback.data
-    error = fallback.error
+  if (error && error.message?.includes('metadata')) {
+    const r = await supabase.from('tasks').insert(baseRow).select().single()
+    data = r.data; error = r.error
+  }
+
+  // If urgency/category columns don't exist yet, retry with core columns only
+  if (error && (error.message?.includes('urgency') || error.message?.includes('category') || error.message?.includes('schema cache'))) {
+    const r = await supabase.from('tasks').insert(coreRow).select().single()
+    data = r.data; error = r.error
   }
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })

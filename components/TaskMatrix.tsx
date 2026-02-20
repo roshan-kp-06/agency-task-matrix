@@ -35,17 +35,29 @@ const CustomDot = (props: {
   const { cx = 0, cy = 0, payload, onClick, selected } = props
   if (!payload) return null
   const { color } = getQuadrant(payload.leverage, payload.effort)
+  const label = (payload.title || '').slice(0, 18)
   return (
-    <circle
-      cx={cx}
-      cy={cy}
-      r={selected ? 10 : 7}
-      fill={color}
-      stroke={selected ? '#fff' : 'transparent'}
-      strokeWidth={2}
-      style={{ cursor: 'pointer', transition: 'r 0.15s' }}
-      onClick={() => onClick(payload)}
-    />
+    <g style={{ cursor: 'pointer' }} onClick={() => onClick(payload)}>
+      <circle
+        cx={cx}
+        cy={cy}
+        r={selected ? 10 : 7}
+        fill={color}
+        stroke={selected ? '#fff' : 'transparent'}
+        strokeWidth={2}
+        style={{ transition: 'r 0.15s' }}
+      />
+      <text
+        x={cx}
+        y={cy - 11}
+        textAnchor="middle"
+        fill="rgba(255,255,255,0.8)"
+        fontSize={9}
+        style={{ pointerEvents: 'none', userSelect: 'none' }}
+      >
+        {label}
+      </text>
+    </g>
   )
 }
 

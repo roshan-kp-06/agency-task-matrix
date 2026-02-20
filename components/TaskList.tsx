@@ -115,10 +115,27 @@ export function TaskList({ tasks, onUpdate, onDone, onKill }: Props) {
             {expanded && (
               <div className="px-4 pb-3 pt-0 border-t border-gray-800">
                 <div className="flex items-start gap-4 pt-3">
-                  <div className="flex-1">
-                    {task.description && (
-                      <p className="text-xs text-gray-400 leading-relaxed mb-2">{task.description}</p>
+                  <div className="flex-1 space-y-2">
+                    {/* AI overview for Slack tasks */}
+                    {task.source === 'slack' && task.metadata?.ai_overview && (
+                      <div className="rounded-md bg-blue-950/40 border border-blue-800/40 px-3 py-2">
+                        <p className="text-xs text-blue-300 leading-relaxed">{task.metadata.ai_overview}</p>
+                      </div>
                     )}
+
+                    {/* Sender/channel badge for Slack tasks */}
+                    {task.source === 'slack' && (task.metadata?.sender_name || task.metadata?.channel_name) && (
+                      <p className="text-xs text-gray-500">
+                        {task.metadata.sender_name && <span>From <span className="text-gray-400">@{task.metadata.sender_name}</span></span>}
+                        {task.metadata.sender_name && task.metadata.channel_name && <span> in </span>}
+                        {task.metadata.channel_name && <span className="text-gray-400">#{task.metadata.channel_name}</span>}
+                      </p>
+                    )}
+
+                    {task.description && (
+                      <p className="text-xs text-gray-400 leading-relaxed">{task.description}</p>
+                    )}
+
                     <div className="flex items-center gap-3">
                       <span className={`text-xs font-medium ${q.text}`}>{q.label}</span>
                       <span className="text-xs text-gray-600">

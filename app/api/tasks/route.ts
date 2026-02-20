@@ -48,6 +48,7 @@ export async function POST(request: NextRequest) {
       status: 'active',
       context_url: body.context_url || null,
       tags: body.tags || [],
+      metadata: body.metadata || null,
     })
     .select()
     .single()

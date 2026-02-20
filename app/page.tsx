@@ -5,9 +5,12 @@ import { TaskMatrix } from '@/components/TaskMatrix'
 import { TaskList } from '@/components/TaskList'
 import { AddTaskPanel } from '@/components/AddTaskPanel'
 import { Task } from '@/lib/supabase'
-import { LayoutGrid, List, Plus, RefreshCw, Download, Check, X, Zap, Database } from 'lucide-react'
+import {
+  LayoutGrid, List, Plus, RefreshCw, Download, Check, X, Zap, Database,
+} from 'lucide-react'
 
-type View = 'matrix' | 'list'
+type View = 'all' | 'matrix' | 'list' | 'quick-wins' | 'big-bets'
+type SourceFilter = 'all' | 'slack' | 'airtable' | 'manual'
 type StorageMode = 'supabase' | 'local' | 'detecting'
 type ImportStatus = { loading: boolean; message: string; type: 'idle' | 'success' | 'error' }
 
@@ -34,9 +37,13 @@ function generateId(): string {
   return crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2)
 }
 
+function isQuickWin(t: Task) { return t.leverage >= 6 && t.effort <= 5 }
+function isBigBet(t: Task) { return t.leverage >= 6 && t.effort >= 6 }
+
 export default function Home() {
   const [tasks, setTasks] = useState<Task[]>([])
   const [view, setView] = useState<View>('matrix')
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all')
   const [showAddPanel, setShowAddPanel] = useState(false)
   const [loading, setLoading] = useState(true)
   const [storageMode, setStorageMode] = useState<StorageMode>('detecting')
@@ -49,7 +56,6 @@ export default function Home() {
       const res = await fetch('/api/tasks?status=active')
       const data = await res.json()
       if (data.supabaseNotConfigured) {
-        // Fall back to localStorage
         setStorageMode('local')
         setTasks(localLoad().filter(t => t.status === 'active'))
       } else {
@@ -57,7 +63,6 @@ export default function Home() {
         setTasks(Array.isArray(data) ? data : [])
       }
     } catch {
-      // Network error — also fall back to localStorage
       setStorageMode('local')
       setTasks(localLoad().filter(t => t.status === 'active'))
     } finally {
@@ -123,6 +128,7 @@ export default function Home() {
         completed_at: null,
         context_url: null,
         tags: [],
+        metadata: null,
       }
       const allTasks = localLoad()
       localSave([newTask, ...allTasks])
@@ -159,14 +165,33 @@ export default function Home() {
     } catch (err) {
       setStatus({ loading: false, message: String(err), type: 'error' })
     }
-    setTimeout(() => setStatus({ loading: false, message: '', type: 'idle' }), 4000)
+    setTimeout(() => setStatus({ loading: false, message: '', type: 'idle' }), 5000)
   }
 
-  const quadrantCounts = {
-    quick_win: tasks.filter(t => t.leverage >= 6 && t.effort <= 5).length,
-    big_bet: tasks.filter(t => t.leverage >= 6 && t.effort >= 6).length,
-    fill_in: tasks.filter(t => t.leverage < 6 && t.effort <= 5).length,
-    eliminate: tasks.filter(t => t.leverage < 6 && t.effort >= 6).length,
+  // Source counts (always from full task list, not filtered)
+  const sourceCounts = {
+    all: tasks.length,
+    slack: tasks.filter(t => t.source === 'slack').length,
+    airtable: tasks.filter(t => t.source === 'airtable').length,
+    manual: tasks.filter(t => t.source === 'manual').length,
+  }
+
+  // Apply source filter first
+  const sourceFiltered = sourceFilter === 'all' ? tasks : tasks.filter(t => t.source === sourceFilter)
+
+  // Then apply view filter
+  const visibleTasks = view === 'quick-wins'
+    ? sourceFiltered.filter(isQuickWin)
+    : view === 'big-bets'
+    ? sourceFiltered.filter(isBigBet)
+    : sourceFiltered
+
+  const viewLabels: Record<View, string> = {
+    all: 'All Tasks',
+    matrix: 'Matrix',
+    list: 'List',
+    'quick-wins': 'Quick Wins',
+    'big-bets': 'Big Bets',
   }
 
   return (
@@ -176,141 +201,190 @@ export default function Home() {
         <div className="bg-amber-900/40 border-b border-amber-800/50 px-6 py-2 text-center">
           <p className="text-xs text-amber-300 flex items-center justify-center gap-1.5">
             <Database size={12} />
-            <span>
-              <strong>Local mode</strong> — tasks saved in this browser only. To sync across devices,{' '}
-              add <code className="bg-amber-900/60 px-1 rounded text-amber-200">NEXT_PUBLIC_SUPABASE_URL</code> and{' '}
-              <code className="bg-amber-900/60 px-1 rounded text-amber-200">NEXT_PUBLIC_SUPABASE_ANON_KEY</code> in Vercel env vars.
-            </span>
+            <strong>Local mode</strong> — tasks saved in this browser only. Add Supabase env vars to sync across devices.
           </p>
         </div>
       )}
 
-      {/* Header */}
-      <header className="border-b border-gray-800 px-6 py-4">
-        <div className="max-w-7xl mx-auto flex items-center justify-between gap-4 flex-wrap">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
-              <Zap size={16} className="text-white" />
+      <div className="flex flex-1 overflow-hidden" style={{ minHeight: 'calc(100vh - 0px)' }}>
+        {/* Sidebar */}
+        <aside className="w-52 flex-shrink-0 border-r border-gray-800 bg-gray-950 flex flex-col">
+          {/* Logo */}
+          <div className="px-4 py-4 border-b border-gray-800 flex items-center gap-2.5">
+            <div className="w-7 h-7 bg-indigo-600 rounded-md flex items-center justify-center flex-shrink-0">
+              <Zap size={14} className="text-white" />
             </div>
-            <h1 className="text-lg font-semibold tracking-tight">Task Matrix</h1>
-            <span className="text-gray-500 text-sm">{tasks.length} active</span>
+            <span className="text-sm font-semibold tracking-tight">Task Matrix</span>
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap">
-            {/* Import buttons */}
+          <nav className="flex-1 px-2 py-3 space-y-5 overflow-y-auto">
+            {/* VIEWS */}
+            <div>
+              <p className="px-2 mb-1.5 text-xs font-semibold text-gray-600 uppercase tracking-wider">Views</p>
+              {(['all', 'matrix', 'list', 'quick-wins', 'big-bets'] as View[]).map((v) => {
+                const icons: Record<View, React.ReactNode> = {
+                  all: <List size={13} />,
+                  matrix: <LayoutGrid size={13} />,
+                  list: <List size={13} />,
+                  'quick-wins': <span className="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0 inline-block" />,
+                  'big-bets': <span className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0 inline-block" />,
+                }
+                return (
+                  <button
+                    key={v}
+                    onClick={() => setView(v)}
+                    className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-left transition-colors ${
+                      view === v
+                        ? 'bg-indigo-600/20 text-indigo-300 font-medium'
+                        : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/50'
+                    }`}
+                  >
+                    {icons[v]}
+                    <span>{viewLabels[v]}</span>
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* SOURCES */}
+            <div>
+              <p className="px-2 mb-1.5 text-xs font-semibold text-gray-600 uppercase tracking-wider">Sources</p>
+              {(['all', 'slack', 'airtable', 'manual'] as SourceFilter[]).map((s) => {
+                const labels = { all: 'All', slack: 'Slack', airtable: 'Airtable', manual: 'Manual' }
+                const count = sourceCounts[s]
+                return (
+                  <button
+                    key={s}
+                    onClick={() => setSourceFilter(s)}
+                    className={`w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-md text-sm text-left transition-colors ${
+                      sourceFilter === s
+                        ? 'bg-indigo-600/20 text-indigo-300 font-medium'
+                        : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/50'
+                    }`}
+                  >
+                    <span>{labels[s]}</span>
+                    {count > 0 && (
+                      <span className={`text-xs px-1.5 py-0.5 rounded-full ${
+                        sourceFilter === s ? 'bg-indigo-600/30 text-indigo-300' : 'bg-gray-800 text-gray-500'
+                      }`}>
+                        {count}
+                      </span>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+          </nav>
+
+          {/* Sidebar footer — import + add */}
+          <div className="px-2 py-3 border-t border-gray-800 space-y-1.5">
             <button
               onClick={() => handleImport('slack')}
               disabled={slackStatus.loading}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm bg-gray-800 hover:bg-gray-700 disabled:opacity-50 transition-colors"
+              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-gray-400 hover:text-gray-200 hover:bg-gray-800/50 disabled:opacity-50 transition-colors"
             >
-              {slackStatus.loading ? <RefreshCw size={13} className="animate-spin" /> : <Download size={13} />}
-              <span>Slack</span>
-              {slackStatus.type === 'success' && <Check size={13} className="text-emerald-400" />}
-              {slackStatus.type === 'error' && <X size={13} className="text-red-400" />}
+              {slackStatus.loading
+                ? <RefreshCw size={13} className="animate-spin text-gray-500" />
+                : <Download size={13} />}
+              <span>Import Slack</span>
+              {slackStatus.type === 'success' && <Check size={12} className="text-emerald-400 ml-auto" />}
+              {slackStatus.type === 'error' && <X size={12} className="text-red-400 ml-auto" />}
             </button>
+
             <button
               onClick={() => handleImport('airtable')}
               disabled={airtableStatus.loading}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm bg-gray-800 hover:bg-gray-700 disabled:opacity-50 transition-colors"
+              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-gray-400 hover:text-gray-200 hover:bg-gray-800/50 disabled:opacity-50 transition-colors"
             >
-              {airtableStatus.loading ? <RefreshCw size={13} className="animate-spin" /> : <Download size={13} />}
-              <span>Airtable</span>
-              {airtableStatus.type === 'success' && <Check size={13} className="text-emerald-400" />}
-              {airtableStatus.type === 'error' && <X size={13} className="text-red-400" />}
+              {airtableStatus.loading
+                ? <RefreshCw size={13} className="animate-spin text-gray-500" />
+                : <Download size={13} />}
+              <span>Import Airtable</span>
+              {airtableStatus.type === 'success' && <Check size={12} className="text-emerald-400 ml-auto" />}
+              {airtableStatus.type === 'error' && <X size={12} className="text-red-400 ml-auto" />}
             </button>
 
-            {/* View toggle */}
-            <div className="flex rounded-lg border border-gray-700 overflow-hidden">
-              <button
-                onClick={() => setView('matrix')}
-                className={`px-3 py-1.5 text-sm flex items-center gap-1.5 transition-colors ${view === 'matrix' ? 'bg-indigo-600 text-white' : 'hover:bg-gray-800'}`}
-              >
-                <LayoutGrid size={13} /> Matrix
-              </button>
-              <button
-                onClick={() => setView('list')}
-                className={`px-3 py-1.5 text-sm flex items-center gap-1.5 transition-colors ${view === 'list' ? 'bg-indigo-600 text-white' : 'hover:bg-gray-800'}`}
-              >
-                <List size={13} /> List
-              </button>
+            <button
+              onClick={() => setShowAddPanel(true)}
+              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm bg-indigo-600 hover:bg-indigo-500 text-white transition-colors"
+            >
+              <Plus size={13} />
+              <span>Add Task</span>
+            </button>
+          </div>
+        </aside>
+
+        {/* Main content area */}
+        <div className="flex-1 flex flex-col min-w-0">
+          {/* Top bar */}
+          <header className="border-b border-gray-800 px-6 py-3 flex items-center justify-between gap-4 flex-shrink-0">
+            <div className="flex items-center gap-3">
+              <h2 className="text-sm font-semibold text-gray-200">{viewLabels[view]}</h2>
+              {sourceFilter !== 'all' && (
+                <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-900/40 text-indigo-300 border border-indigo-800/50">
+                  {sourceFilter}
+                </span>
+              )}
+              <span className="text-xs text-gray-600">{visibleTasks.length} tasks</span>
             </div>
 
             <button
-              onClick={() => setShowAddPanel(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm bg-indigo-600 hover:bg-indigo-500 text-white transition-colors"
+              onClick={fetchTasks}
+              className="p-1.5 rounded-md text-gray-500 hover:text-gray-300 hover:bg-gray-800 transition-colors"
+              title="Refresh"
             >
-              <Plus size={13} /> Add Task
+              <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
             </button>
-          </div>
-        </div>
+          </header>
 
-        {/* Import status messages */}
-        {(slackStatus.message || airtableStatus.message) && (
-          <div className="max-w-7xl mx-auto mt-2 flex gap-3">
-            {slackStatus.message && (
-              <span className={`text-xs px-2 py-1 rounded ${slackStatus.type === 'error' ? 'bg-red-900/50 text-red-300' : 'bg-gray-800 text-gray-400'}`}>
-                Slack: {slackStatus.message}
-              </span>
-            )}
-            {airtableStatus.message && (
-              <span className={`text-xs px-2 py-1 rounded ${airtableStatus.type === 'error' ? 'bg-red-900/50 text-red-300' : 'bg-gray-800 text-gray-400'}`}>
-                Airtable: {airtableStatus.message}
-              </span>
-            )}
-          </div>
-        )}
-      </header>
+          {/* Import status messages */}
+          {(slackStatus.message || airtableStatus.message) && (
+            <div className="px-6 py-2 flex gap-3 border-b border-gray-800 bg-gray-900/50">
+              {slackStatus.message && (
+                <span className={`text-xs px-2 py-1 rounded ${slackStatus.type === 'error' ? 'bg-red-900/50 text-red-300' : 'bg-gray-800 text-gray-400'}`}>
+                  Slack: {slackStatus.message}
+                </span>
+              )}
+              {airtableStatus.message && (
+                <span className={`text-xs px-2 py-1 rounded ${airtableStatus.type === 'error' ? 'bg-red-900/50 text-red-300' : 'bg-gray-800 text-gray-400'}`}>
+                  Airtable: {airtableStatus.message}
+                </span>
+              )}
+            </div>
+          )}
 
-      {/* Quadrant summary bar */}
-      <div className="border-b border-gray-800 px-6 py-2">
-        <div className="max-w-7xl mx-auto flex gap-4 text-xs">
-          <span className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-emerald-500" />
-            <span className="text-gray-400">Quick Wins</span>
-            <span className="font-semibold text-emerald-400">{quadrantCounts.quick_win}</span>
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-blue-500" />
-            <span className="text-gray-400">Big Bets</span>
-            <span className="font-semibold text-blue-400">{quadrantCounts.big_bet}</span>
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-yellow-500" />
-            <span className="text-gray-400">Fill-ins</span>
-            <span className="font-semibold text-yellow-400">{quadrantCounts.fill_in}</span>
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-red-500" />
-            <span className="text-gray-400">Eliminate</span>
-            <span className="font-semibold text-red-400">{quadrantCounts.eliminate}</span>
-          </span>
+          {/* Content */}
+          <main className="flex-1 p-6 overflow-auto">
+            {loading ? (
+              <div className="flex items-center justify-center h-64 text-gray-500">
+                <RefreshCw size={20} className="animate-spin mr-2" /> Loading tasks...
+              </div>
+            ) : visibleTasks.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-64 text-gray-500 gap-3">
+                <Zap size={32} className="text-gray-700" />
+                <p className="text-lg font-medium text-gray-400">
+                  {tasks.length === 0 ? 'No active tasks' : `No ${view === 'quick-wins' ? 'Quick Win' : view === 'big-bets' ? 'Big Bet' : ''} tasks${sourceFilter !== 'all' ? ` from ${sourceFilter}` : ''}`}
+                </p>
+                {tasks.length === 0 && (
+                  <>
+                    <p className="text-sm">Add a task manually or import from Slack / Airtable</p>
+                    <button
+                      onClick={() => setShowAddPanel(true)}
+                      className="mt-2 flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm bg-indigo-600 hover:bg-indigo-500 text-white transition-colors"
+                    >
+                      <Plus size={14} /> Add your first task
+                    </button>
+                  </>
+                )}
+              </div>
+            ) : view === 'matrix' ? (
+              <TaskMatrix tasks={visibleTasks} onUpdate={updateTask} onDone={markDone} onKill={killTask} />
+            ) : (
+              <TaskList tasks={visibleTasks} onUpdate={updateTask} onDone={markDone} onKill={killTask} />
+            )}
+          </main>
         </div>
       </div>
-
-      {/* Main content */}
-      <main className="flex-1 p-6 max-w-7xl mx-auto w-full">
-        {loading ? (
-          <div className="flex items-center justify-center h-64 text-gray-500">
-            <RefreshCw size={20} className="animate-spin mr-2" /> Loading tasks...
-          </div>
-        ) : tasks.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-64 text-gray-500 gap-3">
-            <Zap size={32} className="text-gray-700" />
-            <p className="text-lg font-medium text-gray-400">No active tasks</p>
-            <p className="text-sm">Add a task manually or import from Slack / Airtable</p>
-            <button
-              onClick={() => setShowAddPanel(true)}
-              className="mt-2 flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm bg-indigo-600 hover:bg-indigo-500 text-white transition-colors"
-            >
-              <Plus size={14} /> Add your first task
-            </button>
-          </div>
-        ) : view === 'matrix' ? (
-          <TaskMatrix tasks={tasks} onUpdate={updateTask} onDone={markDone} onKill={killTask} />
-        ) : (
-          <TaskList tasks={tasks} onUpdate={updateTask} onDone={markDone} onKill={killTask} />
-        )}
-      </main>
 
       {/* Add Task Panel */}
       {showAddPanel && (

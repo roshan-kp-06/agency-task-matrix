@@ -19,6 +19,13 @@ export const supabase = new Proxy({} as SupabaseClient, {
   },
 })
 
+export type TaskMetadata = {
+  sender_name?: string
+  channel_name?: string
+  ai_overview?: string
+  workspace?: string
+} | null
+
 export type Task = {
   id: string
   title: string
@@ -33,6 +40,7 @@ export type Task = {
   completed_at: string | null
   context_url: string | null
   tags: string[]
+  metadata: TaskMetadata
 }
 
 export type NewTask = Omit<Task, 'id' | 'created_at' | 'updated_at'>

@@ -1,8 +1,31 @@
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { fetchSlackTasks } from '@/lib/slack'
+import OpenAI from 'openai'
 
 export const dynamic = 'force-dynamic'
+
+async function generateOverview(contextText: string): Promise<string | null> {
+  const apiKey = process.env.OPENAI_API_KEY
+  if (!apiKey) return null
+  try {
+    const client = new OpenAI({ apiKey })
+    const response = await client.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        {
+          role: 'user',
+          content: `In 1-2 sentences, explain what task or action is being requested in this Slack message. Be specific and concrete.\n\nMessage:\n${contextText}`,
+        },
+      ],
+      max_tokens: 100,
+      temperature: 0.3,
+    })
+    return response.choices[0]?.message?.content?.trim() || null
+  } catch {
+    return null
+  }
+}
 
 export async function POST() {
   try {
@@ -26,8 +49,15 @@ export async function POST() {
       return NextResponse.json({ imported: 0, skipped: slackTasks.length, message: 'All tasks already imported' })
     }
 
+    // Generate AI overviews for new tasks
+    const enrichedTasks = []
+    for (const t of newTasks) {
+      const ai_overview = await generateOverview(t.context_text)
+      enrichedTasks.push({ ...t, ai_overview })
+    }
+
     const { data, error } = await supabase.from('tasks').insert(
-      newTasks.map((t) => ({
+      enrichedTasks.map((t) => ({
         title: t.title,
         description: t.description || null,
         source: 'slack',
@@ -37,6 +67,12 @@ export async function POST() {
         status: 'active',
         context_url: t.context_url,
         tags: [],
+        metadata: {
+          sender_name: t.sender_name,
+          channel_name: t.channel_name,
+          ai_overview: t.ai_overview,
+          workspace: 'Airr Digital',
+        },
       }))
     ).select()
 

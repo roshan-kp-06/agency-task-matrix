@@ -56,25 +56,37 @@ export async function POST() {
       enrichedTasks.push({ ...t, ai_overview })
     }
 
-    const { data, error } = await supabase.from('tasks').insert(
-      enrichedTasks.map((t) => ({
-        title: t.title,
-        description: t.description || null,
-        source: 'slack',
-        source_id: t.source_id,
-        leverage: 5,
-        effort: 5,
-        status: 'active',
-        context_url: t.context_url,
-        tags: [],
-        metadata: {
-          sender_name: t.sender_name,
-          channel_name: t.channel_name,
-          ai_overview: t.ai_overview,
-          workspace: 'Airr Digital',
-        },
-      }))
-    ).select()
+    const baseRows = enrichedTasks.map((t) => ({
+      title: t.title,
+      description: t.description || null,
+      source: 'slack',
+      source_id: t.source_id,
+      leverage: 5,
+      effort: 5,
+      status: 'active',
+      context_url: t.context_url,
+      tags: [],
+    }))
+
+    const rowsWithMeta = enrichedTasks.map((t, i) => ({
+      ...baseRows[i],
+      metadata: {
+        sender_name: t.sender_name,
+        channel_name: t.channel_name,
+        ai_overview: t.ai_overview,
+        workspace: 'Airr Digital',
+      },
+    }))
+
+    // Try inserting with metadata first; fall back to without if column doesn't exist yet
+    let { data, error } = await supabase.from('tasks').insert(rowsWithMeta).select()
+
+    if (error && (error.message?.includes('metadata') || error.message?.includes('column'))) {
+      // metadata column not added yet — import without it so the import still works
+      const fallback = await supabase.from('tasks').insert(baseRows).select()
+      data = fallback.data
+      error = fallback.error
+    }
 
     if (error) {
       if (error.message?.includes('schema cache') || error.message?.includes('does not exist') || error.code === '42P01') {

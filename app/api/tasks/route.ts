@@ -36,22 +36,30 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const body = await request.json()
 
-  const { data, error } = await supabase
+  const baseRow = {
+    title: body.title,
+    description: body.description || null,
+    source: body.source || 'manual',
+    source_id: body.source_id || null,
+    leverage: body.leverage ?? 5,
+    effort: body.effort ?? 5,
+    status: 'active',
+    context_url: body.context_url || null,
+    tags: body.tags || [],
+  }
+
+  let { data, error } = await supabase
     .from('tasks')
-    .insert({
-      title: body.title,
-      description: body.description || null,
-      source: body.source || 'manual',
-      source_id: body.source_id || null,
-      leverage: body.leverage ?? 5,
-      effort: body.effort ?? 5,
-      status: 'active',
-      context_url: body.context_url || null,
-      tags: body.tags || [],
-      metadata: body.metadata || null,
-    })
+    .insert({ ...baseRow, metadata: body.metadata || null })
     .select()
     .single()
+
+  // If metadata column doesn't exist yet, retry without it
+  if (error && (error.message?.includes('metadata') || error.message?.includes('column'))) {
+    const fallback = await supabase.from('tasks').insert(baseRow).select().single()
+    data = fallback.data
+    error = fallback.error
+  }
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json(data, { status: 201 })

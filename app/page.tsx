@@ -1,15 +1,16 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { TaskMatrix } from '@/components/TaskMatrix'
 import { TaskList } from '@/components/TaskList'
 import { AddTaskPanel } from '@/components/AddTaskPanel'
-import { Task } from '@/lib/supabase'
+import { Task, Urgency } from '@/lib/supabase'
 import {
   LayoutGrid, List, Plus, RefreshCw, Download, Check, X, Zap, Database,
+  Flame, Calendar,
 } from 'lucide-react'
 
-type View = 'all' | 'matrix' | 'list' | 'quick-wins' | 'big-bets'
+type View = 'today' | 'this_week' | 'all' | 'matrix' | 'list' | 'quick-wins' | 'big-bets'
 type SourceFilter = 'all' | 'slack' | 'airtable' | 'manual'
 type StorageMode = 'supabase' | 'local' | 'detecting'
 type ImportStatus = { loading: boolean; message: string; type: 'idle' | 'success' | 'error' }
@@ -42,8 +43,9 @@ function isBigBet(t: Task) { return t.leverage >= 6 && t.effort >= 6 }
 
 export default function Home() {
   const [tasks, setTasks] = useState<Task[]>([])
-  const [view, setView] = useState<View>('matrix')
+  const [view, setView] = useState<View>('today')
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all')
+  const [categoryFilter, setCategoryFilter] = useState<string | null>(null)
   const [showAddPanel, setShowAddPanel] = useState(false)
   const [loading, setLoading] = useState(true)
   const [storageMode, setStorageMode] = useState<StorageMode>('detecting')
@@ -112,6 +114,8 @@ export default function Home() {
     source: 'manual'
     leverage: number
     effort: number
+    urgency: Urgency
+    category: string | null
   }) => {
     if (storageMode === 'local') {
       const newTask: Task = {
@@ -122,6 +126,8 @@ export default function Home() {
         source_id: null,
         leverage: taskInput.leverage,
         effort: taskInput.effort,
+        urgency: taskInput.urgency,
+        category: taskInput.category,
         status: 'active',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -176,17 +182,39 @@ export default function Home() {
     manual: tasks.filter(t => t.source === 'manual').length,
   }
 
+  // Urgency counts
+  const urgencyCounts = {
+    today: tasks.filter(t => t.urgency === 'today').length,
+    this_week: tasks.filter(t => t.urgency === 'today' || t.urgency === 'this_week').length,
+  }
+
+  // Get unique categories
+  const categories = useMemo(() =>
+    [...new Set(tasks.map(t => t.category).filter(Boolean))] as string[],
+  [tasks])
+
   // Apply source filter first
   const sourceFiltered = sourceFilter === 'all' ? tasks : tasks.filter(t => t.source === sourceFilter)
 
-  // Then apply view filter
-  const visibleTasks = view === 'quick-wins'
-    ? sourceFiltered.filter(isQuickWin)
-    : view === 'big-bets'
-    ? sourceFiltered.filter(isBigBet)
+  // Apply category filter
+  const categoryFiltered = categoryFilter
+    ? sourceFiltered.filter(t => t.category === categoryFilter || t.category?.startsWith(categoryFilter + ' >'))
     : sourceFiltered
 
+  // Then apply view filter
+  const visibleTasks = view === 'today'
+    ? categoryFiltered.filter(t => t.urgency === 'today')
+    : view === 'this_week'
+    ? categoryFiltered.filter(t => t.urgency === 'today' || t.urgency === 'this_week')
+    : view === 'quick-wins'
+    ? categoryFiltered.filter(isQuickWin)
+    : view === 'big-bets'
+    ? categoryFiltered.filter(isBigBet)
+    : categoryFiltered
+
   const viewLabels: Record<View, string> = {
+    today: 'Today',
+    this_week: 'This Week',
     all: 'All Tasks',
     matrix: 'Matrix',
     list: 'List',
@@ -218,11 +246,46 @@ export default function Home() {
           </div>
 
           <nav className="flex-1 px-2 py-3 space-y-5 overflow-y-auto">
+            {/* URGENCY VIEWS */}
+            <div>
+              <p className="px-2 mb-1.5 text-xs font-semibold text-gray-600 uppercase tracking-wider">Focus</p>
+              <button
+                onClick={() => setView('today')}
+                className={`w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-md text-sm text-left transition-colors ${
+                  view === 'today'
+                    ? 'bg-red-600/20 text-red-300 font-medium'
+                    : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/50'
+                }`}
+              >
+                <span className="flex items-center gap-2"><Flame size={13} /> Today</span>
+                {urgencyCounts.today > 0 && (
+                  <span className={`text-xs px-1.5 py-0.5 rounded-full ${
+                    view === 'today' ? 'bg-red-600/30 text-red-300' : 'bg-gray-800 text-gray-500'
+                  }`}>{urgencyCounts.today}</span>
+                )}
+              </button>
+              <button
+                onClick={() => setView('this_week')}
+                className={`w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-md text-sm text-left transition-colors ${
+                  view === 'this_week'
+                    ? 'bg-amber-600/20 text-amber-300 font-medium'
+                    : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/50'
+                }`}
+              >
+                <span className="flex items-center gap-2"><Calendar size={13} /> This Week</span>
+                {urgencyCounts.this_week > 0 && (
+                  <span className={`text-xs px-1.5 py-0.5 rounded-full ${
+                    view === 'this_week' ? 'bg-amber-600/30 text-amber-300' : 'bg-gray-800 text-gray-500'
+                  }`}>{urgencyCounts.this_week}</span>
+                )}
+              </button>
+            </div>
+
             {/* VIEWS */}
             <div>
               <p className="px-2 mb-1.5 text-xs font-semibold text-gray-600 uppercase tracking-wider">Views</p>
               {(['all', 'matrix', 'list', 'quick-wins', 'big-bets'] as View[]).map((v) => {
-                const icons: Record<View, React.ReactNode> = {
+                const icons: Record<string, React.ReactNode> = {
                   all: <List size={13} />,
                   matrix: <LayoutGrid size={13} />,
                   list: <List size={13} />,
@@ -245,6 +308,44 @@ export default function Home() {
                 )
               })}
             </div>
+
+            {/* CATEGORIES */}
+            {categories.length > 0 && (
+              <div>
+                <p className="px-2 mb-1.5 text-xs font-semibold text-gray-600 uppercase tracking-wider">Categories</p>
+                <button
+                  onClick={() => setCategoryFilter(null)}
+                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-left transition-colors ${
+                    categoryFilter === null
+                      ? 'bg-indigo-600/20 text-indigo-300 font-medium'
+                      : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/50'
+                  }`}
+                >
+                  All Categories
+                </button>
+                {categories.sort().map(c => {
+                  const count = tasks.filter(t => t.category === c || t.category?.startsWith(c + ' >')).length
+                  return (
+                    <button
+                      key={c}
+                      onClick={() => setCategoryFilter(c)}
+                      className={`w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-md text-sm text-left transition-colors ${
+                        categoryFilter === c
+                          ? 'bg-indigo-600/20 text-indigo-300 font-medium'
+                          : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/50'
+                      }`}
+                    >
+                      <span className="truncate">{c}</span>
+                      {count > 0 && (
+                        <span className={`text-xs px-1.5 py-0.5 rounded-full flex-shrink-0 ${
+                          categoryFilter === c ? 'bg-indigo-600/30 text-indigo-300' : 'bg-gray-800 text-gray-500'
+                        }`}>{count}</span>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
 
             {/* SOURCES */}
             <div>
@@ -325,6 +426,12 @@ export default function Home() {
                   {sourceFilter}
                 </span>
               )}
+              {categoryFilter && (
+                <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-900/40 text-indigo-300 border border-indigo-800/50 flex items-center gap-1">
+                  {categoryFilter}
+                  <button onClick={() => setCategoryFilter(null)} className="hover:text-white"><X size={10} /></button>
+                </span>
+              )}
               <span className="text-xs text-gray-600">{visibleTasks.length} tasks</span>
             </div>
 
@@ -363,7 +470,13 @@ export default function Home() {
               <div className="flex flex-col items-center justify-center h-64 text-gray-500 gap-3">
                 <Zap size={32} className="text-gray-700" />
                 <p className="text-lg font-medium text-gray-400">
-                  {tasks.length === 0 ? 'No active tasks' : `No ${view === 'quick-wins' ? 'Quick Win' : view === 'big-bets' ? 'Big Bet' : ''} tasks${sourceFilter !== 'all' ? ` from ${sourceFilter}` : ''}`}
+                  {tasks.length === 0
+                    ? 'No active tasks'
+                    : view === 'today'
+                    ? 'Nothing due today'
+                    : view === 'this_week'
+                    ? 'Nothing due this week'
+                    : `No ${view === 'quick-wins' ? 'Quick Win' : view === 'big-bets' ? 'Big Bet' : ''} tasks${sourceFilter !== 'all' ? ` from ${sourceFilter}` : ''}`}
                 </p>
                 {tasks.length === 0 && (
                   <>
@@ -380,7 +493,13 @@ export default function Home() {
             ) : view === 'matrix' ? (
               <TaskMatrix tasks={visibleTasks} onUpdate={updateTask} onDone={markDone} onKill={killTask} />
             ) : (
-              <TaskList tasks={visibleTasks} onUpdate={updateTask} onDone={markDone} onKill={killTask} />
+              <TaskList
+                tasks={visibleTasks}
+                onUpdate={updateTask}
+                onDone={markDone}
+                onKill={killTask}
+                showUrgency={view !== 'today'}
+              />
             )}
           </main>
         </div>

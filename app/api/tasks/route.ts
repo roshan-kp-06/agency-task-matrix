@@ -7,6 +7,9 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const status = searchParams.get('status') || 'active'
 
+  const urgency = searchParams.get('urgency')
+  const category = searchParams.get('category')
+
   const query = supabase
     .from('tasks')
     .select('*')
@@ -14,6 +17,12 @@ export async function GET(request: NextRequest) {
 
   if (status !== 'all') {
     query.eq('status', status)
+  }
+  if (urgency) {
+    query.eq('urgency', urgency)
+  }
+  if (category) {
+    query.eq('category', category)
   }
 
   const { data, error } = await query
@@ -43,6 +52,8 @@ export async function POST(request: NextRequest) {
     source_id: body.source_id || null,
     leverage: body.leverage ?? 5,
     effort: body.effort ?? 5,
+    urgency: body.urgency || 'whenever',
+    category: body.category || null,
     status: 'active',
     context_url: body.context_url || null,
     tags: body.tags || [],

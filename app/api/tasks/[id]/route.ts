@@ -25,6 +25,8 @@ export async function PUT(
   if (body.title !== undefined) updates.title = body.title
   if (body.description !== undefined) updates.description = body.description
   if (body.tags !== undefined) updates.tags = body.tags
+  if (body.urgency !== undefined) updates.urgency = body.urgency
+  if (body.category !== undefined) updates.category = body.category
 
   const { data, error } = await supabase
     .from('tasks')

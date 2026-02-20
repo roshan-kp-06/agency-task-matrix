@@ -26,6 +26,18 @@ export type TaskMetadata = {
   workspace?: string
 } | null
 
+export const URGENCY_LEVELS = ['today', 'this_week', 'whenever'] as const
+export type Urgency = typeof URGENCY_LEVELS[number]
+
+export const CATEGORIES = [
+  'Client Work',
+  'Sales',
+  'Hiring',
+  'Marketing',
+  'Systems',
+  'Operations',
+] as const
+
 export type Task = {
   id: string
   title: string
@@ -35,6 +47,8 @@ export type Task = {
   leverage: number
   effort: number
   status: 'active' | 'completed' | 'killed' | 'archived'
+  urgency: Urgency
+  category: string | null
   created_at: string
   updated_at: string
   completed_at: string | null

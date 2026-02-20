@@ -5,7 +5,7 @@ import {
   ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip,
   ReferenceLine, ResponsiveContainer, Cell
 } from 'recharts'
-import { Task } from '@/lib/supabase'
+import { Task, Urgency } from '@/lib/supabase'
 import { ExternalLink, Check, X, Slack } from 'lucide-react'
 
 type Props = {
@@ -35,13 +35,18 @@ const CustomDot = (props: {
   const { cx = 0, cy = 0, payload, onClick, selected } = props
   if (!payload) return null
   const { color } = getQuadrant(payload.leverage, payload.effort)
+  const isUrgent = payload.urgency === 'today'
   const label = (payload.title || '').slice(0, 18)
+  const baseR = isUrgent ? 9 : 7
   return (
     <g style={{ cursor: 'pointer' }} onClick={() => onClick(payload)}>
+      {isUrgent && (
+        <circle cx={cx} cy={cy} r={baseR + 4} fill="none" stroke="#ef4444" strokeWidth={1.5} strokeDasharray="3 2" opacity={0.6} />
+      )}
       <circle
         cx={cx}
         cy={cy}
-        r={selected ? 10 : 7}
+        r={selected ? 10 : baseR}
         fill={color}
         stroke={selected ? '#fff' : 'transparent'}
         strokeWidth={2}
@@ -49,7 +54,7 @@ const CustomDot = (props: {
       />
       <text
         x={cx}
-        y={cy - 11}
+        y={cy - (isUrgent ? 15 : 11)}
         textAnchor="middle"
         fill="rgba(255,255,255,0.8)"
         fontSize={9}
@@ -68,10 +73,16 @@ const CustomTooltip = ({ active, payload }: { active?: boolean; payload?: { payl
   return (
     <div className="bg-gray-900 border border-gray-700 rounded-lg p-3 shadow-xl max-w-xs">
       <p className="text-sm font-medium text-gray-100 mb-1">{task.title}</p>
-      <div className="flex gap-3 text-xs text-gray-400">
+      <div className="flex gap-3 text-xs text-gray-400 flex-wrap">
         <span>Leverage: <strong className="text-gray-200">{task.leverage}</strong></span>
         <span>Effort: <strong className="text-gray-200">{task.effort}</strong></span>
         <span className="text-gray-500">{label}</span>
+        {task.urgency !== 'whenever' && (
+          <span className={task.urgency === 'today' ? 'text-red-400 font-medium' : 'text-amber-400'}>
+            {task.urgency === 'today' ? 'TODAY' : 'This Week'}
+          </span>
+        )}
+        {task.category && <span className="text-indigo-400">{task.category}</span>}
       </div>
     </div>
   )
@@ -157,6 +168,39 @@ export function TaskMatrix({ tasks, onUpdate, onDone, onKill }: Props) {
               </span>
             </div>
 
+            {/* Urgency selector */}
+            <div>
+              <p className="text-xs text-gray-500 mb-1">Urgency</p>
+              <div className="flex gap-1">
+                {(['today', 'this_week', 'whenever'] as Urgency[]).map(u => (
+                  <button
+                    key={u}
+                    onClick={() => {
+                      onUpdate(selected.id, { urgency: u })
+                      setSelected({ ...selected, urgency: u })
+                    }}
+                    className={`text-xs px-2 py-1 rounded border transition-colors ${
+                      selected.urgency === u
+                        ? u === 'today' ? 'bg-red-900/50 text-red-300 border-red-700'
+                          : u === 'this_week' ? 'bg-amber-900/50 text-amber-300 border-amber-700'
+                          : 'bg-gray-700 text-gray-300 border-gray-600'
+                        : 'bg-gray-800 text-gray-500 border-gray-700 hover:bg-gray-700'
+                    }`}
+                  >
+                    {u === 'today' ? 'Today' : u === 'this_week' ? 'This Week' : 'Whenever'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Category display */}
+            {selected.category && (
+              <div>
+                <p className="text-xs text-gray-500 mb-1">Category</p>
+                <span className="text-xs text-indigo-400 bg-indigo-900/30 px-2 py-1 rounded">{selected.category}</span>
+              </div>
+            )}
+
             {/* Leverage slider */}
             <div>
               <div className="flex justify-between text-xs text-gray-400 mb-1">
@@ -233,6 +277,10 @@ export function TaskMatrix({ tasks, onUpdate, onDone, onKill }: Props) {
               <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0" /><span>Top-right = schedule</span></div>
               <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-yellow-500 flex-shrink-0" /><span>Bottom-left = if time</span></div>
               <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" /><span>Bottom-right = eliminate</span></div>
+            </div>
+            <div className="mt-2 text-xs text-gray-700 space-y-1 text-left w-full border-t border-gray-800 pt-2">
+              <p className="text-gray-500 font-medium">Urgency indicators:</p>
+              <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full border border-dashed border-red-500 flex-shrink-0" /><span>Dashed ring = Today</span></div>
             </div>
           </div>
         )}

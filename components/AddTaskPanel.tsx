@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { X, Plus } from 'lucide-react'
+import { CATEGORIES, Urgency } from '@/lib/supabase'
 
 type Props = {
   onClose: () => void
@@ -11,6 +12,8 @@ type Props = {
     source: 'manual'
     leverage: number
     effort: number
+    urgency: Urgency
+    category: string | null
   }) => Promise<void>
 }
 
@@ -19,6 +22,8 @@ export function AddTaskPanel({ onClose, onAdd }: Props) {
   const [description, setDescription] = useState('')
   const [leverage, setLeverage] = useState(5)
   const [effort, setEffort] = useState(5)
+  const [urgency, setUrgency] = useState<Urgency>('whenever')
+  const [category, setCategory] = useState('')
   const [saving, setSaving] = useState(false)
 
   const quadrantLabel = () => {
@@ -34,13 +39,21 @@ export function AddTaskPanel({ onClose, onAdd }: Props) {
     e.preventDefault()
     if (!title.trim()) return
     setSaving(true)
-    await onAdd({ title: title.trim(), description, source: 'manual', leverage, effort })
+    await onAdd({
+      title: title.trim(),
+      description,
+      source: 'manual',
+      leverage,
+      effort,
+      urgency,
+      category: category.trim() || null,
+    })
     setSaving(false)
   }
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl w-full max-w-md">
+      <div className="bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800">
           <h2 className="text-sm font-semibold text-gray-100">Add Task</h2>
           <button onClick={onClose} className="text-gray-500 hover:text-gray-300">
@@ -70,6 +83,44 @@ export function AddTaskPanel({ onClose, onAdd }: Props) {
               rows={2}
               className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 placeholder-gray-600 focus:outline-none focus:border-indigo-500 transition-colors resize-none"
             />
+          </div>
+
+          {/* Urgency */}
+          <div>
+            <label className="text-xs text-gray-400 mb-1 block">When does this need to happen?</label>
+            <div className="flex gap-2">
+              {([
+                { value: 'today' as const, label: 'Today', active: 'bg-red-600 text-white' },
+                { value: 'this_week' as const, label: 'This Week', active: 'bg-amber-600 text-white' },
+                { value: 'whenever' as const, label: 'Whenever', active: 'bg-gray-600 text-white' },
+              ]).map(opt => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setUrgency(opt.value)}
+                  className={`flex-1 py-1.5 rounded-lg text-xs transition-colors ${
+                    urgency === opt.value ? opt.active : 'bg-gray-800 text-gray-500 hover:bg-gray-700'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Category */}
+          <div>
+            <label className="text-xs text-gray-400 mb-1 block">Category (optional)</label>
+            <input
+              list="category-options"
+              value={category}
+              onChange={e => setCategory(e.target.value)}
+              placeholder="e.g., Client Work > Atlas"
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 placeholder-gray-600 focus:outline-none focus:border-indigo-500 transition-colors"
+            />
+            <datalist id="category-options">
+              {CATEGORIES.map(c => <option key={c} value={c} />)}
+            </datalist>
           </div>
 
           {/* Leverage */}

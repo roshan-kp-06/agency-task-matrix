@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { Task } from '@/lib/supabase'
+import { prioritySort } from '@/lib/priority'
 import { Check, X, ExternalLink, ChevronUp, ChevronDown } from 'lucide-react'
 
 type Props = {
@@ -9,6 +10,7 @@ type Props = {
   onUpdate: (id: string, updates: Partial<Task>) => void
   onDone: (id: string) => void
   onKill: (id: string) => void
+  showUrgency?: boolean
 }
 
 function getQuadrantStyle(leverage: number, effort: number) {
@@ -24,10 +26,16 @@ function getSourceEmoji(source: string) {
   return '✏️'
 }
 
-export function TaskList({ tasks, onUpdate, onDone, onKill }: Props) {
+function getUrgencyStyle(urgency: string) {
+  if (urgency === 'today') return { label: 'Today', bg: 'bg-red-900/50 text-red-300 border-red-700' }
+  if (urgency === 'this_week') return { label: 'This Week', bg: 'bg-amber-900/50 text-amber-300 border-amber-700' }
+  return { label: 'Whenever', bg: 'bg-gray-800 text-gray-500 border-gray-700' }
+}
+
+export function TaskList({ tasks, onUpdate, onDone, onKill, showUrgency = true }: Props) {
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
-  const sorted = [...tasks].sort((a, b) => (b.leverage / b.effort) - (a.leverage / a.effort))
+  const sorted = [...tasks].sort(prioritySort)
 
   return (
     <div className="space-y-1.5">
@@ -45,6 +53,7 @@ export function TaskList({ tasks, onUpdate, onDone, onKill }: Props) {
         const q = getQuadrantStyle(task.leverage, task.effort)
         const score = task.leverage / task.effort
         const expanded = expandedId === task.id
+        const urg = getUrgencyStyle(task.urgency)
 
         return (
           <div key={task.id} className="rounded-lg bg-gray-900 border border-gray-800 hover:border-gray-700 transition-colors">
@@ -52,11 +61,23 @@ export function TaskList({ tasks, onUpdate, onDone, onKill }: Props) {
               className="grid grid-cols-12 gap-3 px-4 py-3 items-center cursor-pointer"
               onClick={() => setExpandedId(expanded ? null : task.id)}
             >
-              {/* Task title */}
-              <div className="col-span-5 flex items-center gap-2">
+              {/* Task title + urgency badge */}
+              <div className="col-span-5 flex items-center gap-2 min-w-0">
                 <span className="text-xs text-gray-600 w-4 text-right flex-shrink-0">{i + 1}</span>
                 <span className={`w-2 h-2 rounded-full flex-shrink-0 ${q.dot}`} />
-                <span className="text-sm text-gray-200 leading-snug line-clamp-1">{task.title}</span>
+                {showUrgency && task.urgency !== 'whenever' && (
+                  <button
+                    onClick={e => {
+                      e.stopPropagation()
+                      const next = task.urgency === 'today' ? 'this_week' : task.urgency === 'this_week' ? 'whenever' : 'today'
+                      onUpdate(task.id, { urgency: next })
+                    }}
+                    className={`text-[10px] px-1.5 py-0.5 rounded border flex-shrink-0 ${urg.bg}`}
+                  >
+                    {urg.label}
+                  </button>
+                )}
+                <span className="text-sm text-gray-200 leading-snug line-clamp-1 min-w-0">{task.title}</span>
                 {expanded ? <ChevronUp size={12} className="text-gray-500 flex-shrink-0" /> : <ChevronDown size={12} className="text-gray-500 flex-shrink-0" />}
               </div>
 
@@ -136,8 +157,24 @@ export function TaskList({ tasks, onUpdate, onDone, onKill }: Props) {
                       <p className="text-xs text-gray-400 leading-relaxed">{task.description}</p>
                     )}
 
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 flex-wrap">
                       <span className={`text-xs font-medium ${q.text}`}>{q.label}</span>
+                      {/* Urgency toggle */}
+                      <button
+                        onClick={e => {
+                          e.stopPropagation()
+                          const next = task.urgency === 'today' ? 'this_week' : task.urgency === 'this_week' ? 'whenever' : 'today'
+                          onUpdate(task.id, { urgency: next })
+                        }}
+                        className={`text-[10px] px-1.5 py-0.5 rounded border ${urg.bg}`}
+                      >
+                        {urg.label}
+                      </button>
+                      {task.category && (
+                        <span className="text-xs text-indigo-400 bg-indigo-900/30 px-1.5 py-0.5 rounded">
+                          {task.category}
+                        </span>
+                      )}
                       <span className="text-xs text-gray-600">
                         Added {new Date(task.created_at).toLocaleDateString()}
                       </span>

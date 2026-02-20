@@ -10,6 +10,8 @@ create table if not exists tasks (
   leverage     integer default 5 check (leverage between 1 and 10),
   effort       integer default 5 check (effort between 1 and 10),
   status       text default 'active' check (status in ('active', 'completed', 'killed', 'archived')),
+  urgency      text default 'whenever' check (urgency in ('today', 'this_week', 'whenever')),
+  category     text,
   created_at   timestamptz default now(),
   updated_at   timestamptz default now(),
   completed_at timestamptz,
@@ -20,6 +22,8 @@ create table if not exists tasks (
 -- Index for fast fetches by status
 create index if not exists tasks_status_idx on tasks (status);
 create index if not exists tasks_source_idx on tasks (source);
+create index if not exists tasks_urgency_idx on tasks (urgency);
+create index if not exists tasks_category_idx on tasks (category);
 
 -- Auto-update updated_at on row change
 create or replace function update_updated_at()
